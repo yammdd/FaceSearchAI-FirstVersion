@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tìm kiếm khuôn mặt</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .webcam-container { position: relative; width: 100%; max-width: 640px; margin: auto; }
+        #webcamVideo, #overlayCanvas { position: absolute; top: 0; left: 0; width: 100%; height: auto; border-radius: 0.5rem; }
+        #webcamVideo { position: relative; z-index: 1; background-color: #e5e7eb; }
+        #overlayCanvas { z-index: 10; pointer-events: none; }
+        .loader { border: 4px solid #f3f3f3; border-top: 4px solid #3498db; border-radius: 50%; width: 30px; height: 30px; animation: spin 1s linear infinite; display: none; margin: 10px auto; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        #queryImagePreview { max-height: 150px; margin-top: 10px; border-radius: 0.5rem; border: 1px solid #e5e7eb; object-fit: contain; }
+        #loadingOverlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0, 0, 0, 0.7); z-index: 9999; display: flex; justify-content: center; align-items: center; flex-direction: column; color: white; font-size: 1.2em; text-align: center; visibility: hidden; opacity: 0; transition: opacity 0.3s ease-in-out, visibility 0.3s ease-in-out; }
+        #loadingOverlay.visible { visibility: visible; opacity: 1; }
+        #loadingOverlay .spinner { border: 8px solid #f3f3f3; border-top: 8px solid #3498db; width: 60px; height: 60px; margin-bottom: 20px; display: block !important; }
+        fieldset:disabled { opacity: 0.6; cursor: not-allowed; }
+        fieldset:disabled button, fieldset:disabled input { pointer-events: none; }
+    </style>
+</head>
+<body class="bg-gray-100 p-4 md:p-8">
+
+    <div id="loadingOverlay">
+        <div class="spinner loader"></div>
+        <p id="loadingMessage">Đang tải mô hình AI, vui lòng chờ...</p>
+        <p class="text-sm mt-2">(Lần đầu có thể mất vài phút)</p>
+    </div>
+
+    <div class="max-w-4xl mx-auto bg-white p-6 rounded-lg shadow-md">
+        <h1 class="text-2xl md:text-3xl font-bold text-center text-gray-800 mb-6">Ứng dụng Tìm kiếm Khuôn mặt</h1>
+
+        <div id="status" class="mb-4 text-center text-gray-600 min-h-[24px]"></div>
+        <div id="errorStatus" class="mb-4 text-center text-red-600 min-h-[24px]"></div>
+
+        <fieldset id="querySection" class="mb-8 p-4 border border-gray-200 rounded-lg" disabled>
+            <legend class="text-xl font-semibold text-gray-700 mb-3 px-2">Bước 1: Tải ảnh chân dung cần tìm</legend>
+            <div class="flex flex-col sm:flex-row items-center gap-4">
+                <input type="file" id="queryImageInput" accept="image/*" class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 flex-grow"/>
+                <button id="setQueryBtn" onclick="setQuery()" class="w-full sm:w-auto bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-6 rounded-full transition duration-150 ease-in-out disabled:opacity-50 disabled:cursor-not-allowed">Đặt ảnh tìm kiếm</button>
+            </div>
+            <div class="mt-4 text-center">
+                 <img id="queryImagePreview" src="#" alt="Ảnh query đã chọn" class="hidden mx-auto"/>
+            </div>
+            <div id="queryLoader" class="loader"></div>
+        </fieldset>
+
+        <fieldset id="searchSection" disabled>
+            <div class="mb-4 border-b border-gray-200">
+                <ul class="flex flex-wrap -mb-px text-sm font-medium text-center" id="myTab" role="tablist">
+                    <li class="mr-2" role="presentation">
+                        <button class="inline-block p-4 border-b-2 rounded-t-lg border-transparent hover:text-gray-600 hover:border-gray-300 disabled:opacity-50" id="video-tab" data-tabs-target="#videoSearch" type="button" role="tab" aria-controls="videoSearch" aria-selected="false">Tìm kiếm trong Video</button>
+                    </li>
+                    <li class="mr-2" role="presentation">
+                        <button class="inline-block p-4 border-b-2 rounded-t-lg disabled:opacity-50" id="live-tab" data-tabs-target="#liveWebcam" type="button" role="tab" aria-controls="liveWebcam" aria-selected="true">Tìm kiếm Live Webcam</button> </li>
+                </ul>
+            </div>
+            <div id="myTabContent">
+                <div class="hidden p-4 rounded-lg bg-gray-50" id="videoSearch" role="tabpanel" aria-labelledby="video-tab">
+                    <h2 class="text-xl font-semibold text-gray-700 mb-3">Bước 2: Tải video để tìm kiếm</h2>
+                     <p class="text-sm text-gray-500 mb-3">Hãy chắc chắn bạn đã đặt ảnh tìm kiếm ở Bước 1.</p>
+                    <div class="flex flex-col sm:flex-row items-center gap-4 mb-4">
+                        <input type="file" id="videoInput" accept="video/*,.mkv,.avi,.mov,.mp4" class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-green-50 file:text-green-700 hover:file:bg-green-100 flex-grow"/>
+                        <button id="searchVideoBtn" onclick="searchVideo()" class="w-full sm:w-auto bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-6 rounded-full transition duration-150 ease-in-out disabled:opacity-50 disabled:cursor-not-allowed">Tìm kiếm Video</button>
+                    </div>
+                    <div id="videoLoader" class="loader"></div>
+                    <div id="videoResultContainer" class="mt-4">
+                        <h3 class="text-lg font-semibold text-gray-700 mb-2">Video kết quả:</h3>
+                        <video id="resultVideo" controls class="w-full rounded-lg hidden bg-gray-200"></video>
+                        <p id="noVideoResult" class="text-gray-500">Chưa có video kết quả.</p>
+                    </div>
+                </div>
+
+                <div class="p-4 rounded-lg bg-gray-50" id="liveWebcam" role="tabpanel" aria-labelledby="live-tab"> <h2 class="text-xl font-semibold text-gray-700 mb-3">Bước 2: Tìm kiếm bằng Webcam</h2>
+                     <p class="text-sm text-gray-500 mb-3">Hãy chắc chắn bạn đã đặt ảnh tìm kiếm ở Bước 1.</p>
+                    <div class="flex flex-col sm:flex-row justify-center items-center gap-4 mb-4">
+                        <button id="startCamBtn" onclick="startWebcam()" class="w-full sm:w-auto bg-teal-500 hover:bg-teal-600 text-white font-bold py-2 px-6 rounded-full transition duration-150 ease-in-out disabled:opacity-50 disabled:cursor-not-allowed">Bắt đầu Webcam</button>
+                        <button id="stopCamBtn" onclick="stopWebcam()" class="w-full sm:w-auto bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-6 rounded-full transition duration-150 ease-in-out disabled:opacity-50 disabled:cursor-not-allowed" disabled>Dừng Webcam</button>
+                    </div>
+                    <div id="webcamLoader" class="loader"></div>
+                    <div class="webcam-container mt-4">
+                        <video id="webcamVideo" playsinline autoplay muted class="bg-gray-200 rounded-lg"></video>
+                        <canvas id="overlayCanvas"></canvas>
+                    </div>
+                </div>
+            </div>
+        </fieldset>
+    </div>
+
+    <script>
+        // --- Get DOM Elements ---
+        const loadingOverlay = document.getElementById('loadingOverlay');
+        const loadingMessage = document.getElementById('loadingMessage');
+        const querySection = document.getElementById('querySection');
+        const searchSection = document.getElementById('searchSection');
+        const queryImageInput = document.getElementById('queryImageInput');
+        const queryImagePreview = document.getElementById('queryImagePreview');
+        const setQueryBtn = document.getElementById('setQueryBtn');
+        const videoInput = document.getElementById('videoInput');
+        const searchVideoBtn = document.getElementById('searchVideoBtn');
+        // Bỏ các element liên quan đến tìm kiếm ảnh
+        // const targetImageInput = document.getElementById('targetImageInput');
+        // const searchImageBtn = document.getElementById('searchImageBtn');
+        // const resultImage = document.getElementById('resultImage');
+        // const noImageResult = document.getElementById('noImageResult');
+        // const imageLoader = document.getElementById('imageLoader');
+        const statusDiv = document.getElementById('status');
+        const errorStatusDiv = document.getElementById('errorStatus');
+        const resultVideo = document.getElementById('resultVideo');
+        const noVideoResult = document.getElementById('noVideoResult');
+        const webcamVideo = document.getElementById('webcamVideo');
+        const overlayCanvas = document.getElementById('overlayCanvas');
+        const startCamBtn = document.getElementById('startCamBtn');
+        const stopCamBtn = document.getElementById('stopCamBtn');
+        const queryLoader = document.getElementById('queryLoader');
+        const videoLoader = document.getElementById('videoLoader');
+        const webcamLoader = document.getElementById('webcamLoader');
+
+        // --- State Variables ---
+        let stream = null; let animationFrameId = null; let isWebcamRunning = false;
+        const canvasCtx = overlayCanvas.getContext('2d');
+        const API_BASE_URL = window.location.origin;
+        let isBackendReady = false;
+
+        // --- Utility Functions ---
+        function showStatus(message, isError = false) {
+            if (isError) { errorStatusDiv.textContent = message; statusDiv.textContent = ''; }
+            else { statusDiv.textContent = message; errorStatusDiv.textContent = ''; }
+            console.log(isError ? "ERROR:" : "STATUS:", message);
+        }
+        function showLoader(loaderElement, show = true) { if(loaderElement) loaderElement.style.display = show ? 'block' : 'none'; }
+        function showLoadingOverlay(show = true, message = "Đang tải mô hình AI, vui lòng chờ...") {
+             if(loadingMessage) loadingMessage.textContent = message;
+             if(loadingOverlay) loadingOverlay.classList.toggle('visible', show);
+        }
+        function enableUI(enable = true) {
+             if(querySection) querySection.disabled = !enable;
+             if(searchSection) searchSection.disabled = !enable;
+        }
+
+        // --- Check Backend Readiness ---
+        async function checkBackendStatus() {
+            if (!isBackendReady) { showLoadingOverlay(true); enableUI(false); }
+            try {
+                const response = await fetch(`${API_BASE_URL}/ready`);
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.status === 'ready') { isBackendReady = true; showStatus("Backend đã sẵn sàng.", false); showLoadingOverlay(false); enableUI(true); return true; }
+                    else { showStatus("Backend đang tải mô hình...", false); setTimeout(checkBackendStatus, 5000); return false; }
+                } else { showStatus(`Lỗi kết nối backend (${response.status}). Đang thử lại...`, true); setTimeout(checkBackendStatus, 5000); return false; }
+            } catch (error) { console.error("Error checking backend status:", error); showStatus("Lỗi kết nối tới backend. Đang thử lại...", true); setTimeout(checkBackendStatus, 5000); return false; }
+        }
+
+        // --- Event Listener for Query Image Input Change ---
+        queryImageInput.addEventListener('change', (event) => {
+             const file = event.target.files[0];
+             if (file && queryImagePreview) {
+                 const reader = new FileReader();
+                 reader.onload = function(e) { queryImagePreview.src = e.target.result; queryImagePreview.classList.remove('hidden'); }
+                 reader.readAsDataURL(file);
+             } else if (queryImagePreview) { queryImagePreview.classList.add('hidden'); queryImagePreview.src = "#"; }
+        });
+
+        // --- API Call Functions ---
+        async function setQuery() {
+             if (!isBackendReady) { showStatus("Backend chưa sẵn sàng.", true); return; }
+             const file = queryImageInput.files[0]; if (!file) { showStatus("Vui lòng chọn ảnh.", true); return; }
+             showLoader(queryLoader, true); if(setQueryBtn) setQueryBtn.disabled = true; showStatus("Đang xử lý ảnh tìm kiếm...");
+             const formData = new FormData(); formData.append('query', file);
+             try {
+                 const response = await fetch(`${API_BASE_URL}/set_query`, { method: 'POST', body: formData });
+                 const result = await response.json();
+                 if (response.ok && result.status) { showStatus("Ảnh tìm kiếm đã đặt thành công!"); }
+                 else { showStatus(result.error || `Lỗi ${response.status}: Không thể đặt ảnh.`, true); }
+             } catch (error) { console.error("Error setting query:", error); showStatus("Lỗi mạng hoặc server khi đặt ảnh.", true); }
+             finally { showLoader(queryLoader, false); if(setQueryBtn) setQueryBtn.disabled = false; }
+        }
+        async function searchVideo() {
+             if (!isBackendReady) { showStatus("Backend chưa sẵn sàng.", true); return; }
+             const file = videoInput.files[0]; if (!file) { showStatus("Vui lòng chọn video.", true); return; }
+             showLoader(videoLoader, true); if(searchVideoBtn) searchVideoBtn.disabled = true; if(videoInput) videoInput.disabled = true;
+             showStatus("Đang xử lý video..."); if(resultVideo) { resultVideo.classList.add('hidden'); resultVideo.src = ""; } if(noVideoResult) noVideoResult.classList.remove('hidden');
+             const formData = new FormData(); formData.append('video', file);
+             try {
+                 const response = await fetch(`${API_BASE_URL}/search`, { method: 'POST', body: formData });
+                 const result = await response.json();
+                 if (response.ok && result.video_url) {
+                     showStatus("Xử lý video hoàn tất! Đang tải video kết quả...");
+                     const videoUrl = API_BASE_URL + result.video_url; console.log("Video result URL:", videoUrl);
+                     if(resultVideo && noVideoResult) {
+                         resultVideo.src = videoUrl; resultVideo.classList.remove('hidden'); noVideoResult.classList.add('hidden'); resultVideo.load();
+                         resultVideo.onerror = function() { console.error("HTML Video Element Error:", resultVideo.error); showStatus(`Lỗi tải video từ URL: ${videoUrl}. Mã lỗi trình duyệt: ${resultVideo.error?.code}`, true); resultVideo.classList.add('hidden'); noVideoResult.classList.remove('hidden'); };
+                         resultVideo.onloadeddata = function() { console.log("Video data loaded."); showStatus("Video kết quả đã tải xong."); };
+                     }
+                 } else { showStatus(result.error || `Lỗi ${response.status}: Không thể xử lý video.`, true); if(resultVideo) resultVideo.classList.add('hidden'); if(noVideoResult) noVideoResult.classList.remove('hidden'); }
+             } catch (error) { console.error("Error searching video:", error); showStatus("Lỗi mạng hoặc server khi tìm kiếm video.", true); if(resultVideo) resultVideo.classList.add('hidden'); if(noVideoResult) noVideoResult.classList.remove('hidden'); }
+             finally { showLoader(videoLoader, false); if(searchVideoBtn) searchVideoBtn.disabled = false; if(videoInput) videoInput.disabled = false; }
+        }
+        // Bỏ hàm searchImage()
+
+        // --- Webcam Functions ---
+         async function startWebcam() {
+             if (!isBackendReady) { showStatus("Backend chưa sẵn sàng.", true); return; }
+             if (isWebcamRunning) return;
+             showLoader(webcamLoader, true); showStatus("Đang khởi động webcam...");
+             try {
+                 stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+                 if (webcamVideo) webcamVideo.srcObject = stream;
+                 webcamVideo.onloadedmetadata = () => {
+                     if (overlayCanvas && webcamVideo) { overlayCanvas.width = webcamVideo.videoWidth; overlayCanvas.height = webcamVideo.videoHeight; }
+                     isWebcamRunning = true; if(startCamBtn) startCamBtn.disabled = true; if(stopCamBtn) stopCamBtn.disabled = false;
+                     showStatus("Webcam đang chạy. Đang tìm kiếm khuôn mặt..."); showLoader(webcamLoader, false);
+                     processFrameLoop();
+                 };
+             } catch (err) { console.error("Error accessing webcam:", err); showStatus(`Không thể truy cập webcam: ${err.message}.`, true); showLoader(webcamLoader, false); stopWebcam(); }
+        }
+        function stopWebcam() {
+             if (stream) { stream.getTracks().forEach(track => track.stop()); stream = null; }
+             if (animationFrameId) { cancelAnimationFrame(animationFrameId); animationFrameId = null; }
+             if (webcamVideo) webcamVideo.srcObject = null; if (canvasCtx && overlayCanvas) canvasCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+             isWebcamRunning = false; if(startCamBtn) startCamBtn.disabled = false; if(stopCamBtn) stopCamBtn.disabled = true;
+             showStatus("Webcam đã dừng."); showLoader(webcamLoader, false);
+        }
+        async function processFrameLoop() {
+             if (!isWebcamRunning || !stream || !webcamVideo) return;
+             const tempCanvas = document.createElement('canvas'); tempCanvas.width = webcamVideo.videoWidth; tempCanvas.height = webcamVideo.videoHeight;
+             const tempCtx = tempCanvas.getContext('2d'); if(!tempCtx) return;
+             tempCtx.drawImage(webcamVideo, 0, 0, tempCanvas.width, tempCanvas.height);
+             const imageData = tempCanvas.toDataURL('image/jpeg', 0.8);
+             try {
+                 const response = await fetch(`${API_BASE_URL}/process_live_frame`, { method: 'POST', headers: { 'Content-Type': 'application/json', }, body: JSON.stringify({ image: imageData }) });
+                 if (response.ok) { const result = await response.json(); drawFrameAndBoxes(result.matches || []); }
+                 else { const errorResult = await response.json(); console.error("Error processing frame:", errorResult.error); drawFrameAndBoxes([]); }
+             } catch (error) { console.error("Network error processing frame:", error); drawFrameAndBoxes([]); }
+             animationFrameId = requestAnimationFrame(processFrameLoop);
+        }
+        function drawFrameAndBoxes(matches) {
+             if (!isWebcamRunning || !canvasCtx || !webcamVideo || !overlayCanvas) return;
+             canvasCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+             canvasCtx.drawImage(webcamVideo, 0, 0, overlayCanvas.width, overlayCanvas.height);
+             canvasCtx.strokeStyle = 'lime'; canvasCtx.lineWidth = 3; canvasCtx.font = '16px Arial'; canvasCtx.fillStyle = 'lime';
+             matches.forEach(match => {
+                 const [xmin, ymin, xmax, ymax] = match.box; const width = xmax - xmin; const height = ymax - ymin;
+                 canvasCtx.strokeRect(xmin, ymin, width, height);
+                 const label = "Matched"; const labelY = ymin - 5 > 0 ? ymin - 5 : ymin + 15;
+                 canvasCtx.fillText(label, xmin, labelY);
+             });
+        }
+
+        // --- Tab Handling Logic & Initial Load ---
+        document.addEventListener('DOMContentLoaded', () => {
+            const tabs = document.querySelectorAll('[data-tabs-target]'); // Lấy tất cả các nút tab
+            const tabContents = document.querySelectorAll('[role="tabpanel"]'); // Lấy tất cả nội dung tab
+            const defaultTabButton = document.getElementById('live-tab'); // Tab mặc định là Live Webcam
+
+            const switchTab = (targetId) => {
+                 // Cập nhật trạng thái active/inactive cho các nút tab
+                 tabs.forEach(tab => {
+                     const isSelected = tab.getAttribute('data-tabs-target') === targetId;
+                     tab.setAttribute('aria-selected', isSelected);
+                     tab.classList.toggle('border-blue-600', isSelected); // Màu viền xanh cho tab active
+                     tab.classList.toggle('text-blue-600', isSelected);   // Màu chữ xanh cho tab active
+                     tab.classList.toggle('border-transparent', !isSelected); // Viền trong suốt cho tab inactive
+                     tab.classList.toggle('hover:text-gray-600', !isSelected);
+                     tab.classList.toggle('hover:border-gray-300', !isSelected);
+                 });
+                 // Hiển thị nội dung tab được chọn và ẩn các tab khác
+                 tabContents.forEach(content => {
+                     content.classList.toggle('hidden', content.id !== targetId.substring(1)); // Bỏ dấu #
+                 });
+                 // Dừng webcam nếu chuyển khỏi tab live
+                 if (targetId !== '#liveWebcam' && isWebcamRunning) {
+                     stopWebcam();
+                 }
+                 // Tùy chọn: Tự động bật webcam khi chuyển đến tab live
+                 // else if (targetId === '#liveWebcam' && isBackendReady && !isWebcamRunning) {
+                 //      startWebcam();
+                 // }
+            };
+
+            // Kích hoạt tab mặc định khi tải trang
+            if(defaultTabButton) {
+                 switchTab(defaultTabButton.getAttribute('data-tabs-target'));
+            } else { // Fallback nếu ID tab mặc định sai
+                 if(tabs.length > 0) switchTab(tabs[0].getAttribute('data-tabs-target'));
+            }
+
+            // Thêm sự kiện click cho các nút tab
+            tabs.forEach(tab => {
+                tab.addEventListener('click', (event) => {
+                    // Chỉ cho phép chuyển tab khi UI đã sẵn sàng
+                    if (!searchSection.disabled) {
+                         switchTab(event.target.getAttribute('data-tabs-target'));
+                    }
+                });
+            });
+
+            // Bắt đầu kiểm tra trạng thái backend
+            checkBackendStatus();
+        });
+    </script>
+
+</body>
+</html>

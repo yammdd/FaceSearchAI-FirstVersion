@@ -1,0 +1,8 @@
+Flask
+opencv-python
+numpy
+Pillow
+deepface
+tensorflow
+tf-keras
+onnxruntime

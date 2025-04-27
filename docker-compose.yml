@@ -1,0 +1,44 @@
+version: '3.8' # Phiên bản Compose
+
+services:
+  # Service cho Backend Flask
+  backend:
+    build: ./backend  # Đường dẫn tới thư mục chứa Dockerfile của backend
+    ports:
+      - "5000:5000" # Map cổng 5000 của container ra cổng 5000 của máy host
+                    # Giữ lại để có thể truy cập trực tiếp API backend khi cần test
+    volumes:
+      # Mount thư mục kết quả tĩnh để có thể truy cập từ host (nếu cần)
+      # và để dữ liệu không bị mất khi container xóa
+      - ./backend/static/results:/app/static/results
+      # Mount thư mục uploads để dữ liệu không bị mất
+      - ./backend/uploads:/app/uploads
+      # Optional: Mount code để thay đổi không cần build lại image (chỉ cho dev)
+      # - ./backend:/app
+    restart: always # Tự động khởi động lại nếu bị lỗi
+
+  # Service cho Frontend Nginx
+  frontend:
+    build: ./frontend # Đường dẫn tới thư mục chứa Dockerfile của frontend
+    ports:
+      - "8080:80"   # Map cổng 80 của Nginx (trong container) ra cổng 8080 của máy host
+                    # Bạn sẽ truy cập ứng dụng qua http://localhost:8080
+    volumes:
+      # <<< THÊM DÒNG NÀY >>>
+      # Mount file cấu hình Nginx tùy chỉnh vào container, thay thế file mặc định.
+      # File nginx.conf phải nằm cùng cấp với docker-compose.yml trên máy host.
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro # :ro = read-only
+      # Ghi chú: Nếu Dockerfile frontend của bạn không COPY index.html,
+      # bạn cần mount cả file index.html vào /usr/share/nginx/html nữa.
+      # Ví dụ: - ./frontend/index.html:/usr/share/nginx/html/index.html:ro
+    depends_on:
+      - backend     # Đảm bảo backend khởi động xong trước khi frontend khởi động
+    restart: always # Tự động khởi động lại nếu bị lỗi
+
+# networks: # Có thể định nghĩa network riêng nếu cần
+#  app_network:
+#    driver: bridge
+
+# volumes: # Có thể định nghĩa named volumes nếu cần quản lý dữ liệu tốt hơn
+#  results_data:
+#  uploads_data:
