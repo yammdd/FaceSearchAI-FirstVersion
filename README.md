@@ -49,7 +49,7 @@
 
 2.  **Kiểm tra cấu trúc thư mục:** Đảm bảo cấu trúc thư mục giống như sau:
     ```
-    AI_system_development/
+    FaceSearchAI-FirstVersion/
     ├── backend/
     │   ├── app.py
     │   ├── requirements.txt
@@ -62,7 +62,7 @@
     ```
 
 3.  **Build và Chạy bằng Docker Compose:**
-    Mở terminal hoặc command prompt trong thư mục gốc (`AI_system_development/`) và chạy lệnh:
+    Mở terminal hoặc command prompt trong thư mục gốc (`FaceSearchAI-FirstVersion/`) và chạy lệnh:
     ```bash
     docker-compose up -d --build
     ```
